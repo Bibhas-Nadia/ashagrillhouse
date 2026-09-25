@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'db_helper.dart';
 
 class BackupService {
-  static const String SECRET_API_KEY = "DFGFHDGH656564&^JHFGJKH#$@GFGRHHGD55454GTDH";
+  static const String SECRET_API_KEY = "89faa837458e8dbc66de416fa04f9466b462d2b77a2b3065d9d6e7cc58288777";
   // 🟢 Add this lock variable
   static bool _isSyncing = false;
 
