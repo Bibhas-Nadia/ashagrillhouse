@@ -1,4 +1,4 @@
-
+/*
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -1339,6 +1339,1798 @@ class _CustomerReceiptPageState extends State<CustomerReceiptPage> {
 
 
 
+
+  double _getGrandTotal() => _appData.where((e) => e.status == "billed").fold(0.0, (sum, item) => sum + item.totalPrice);
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (!_isWorkspaceOpen) {
+      return Scaffold(
+        backgroundColor: Colors.blueGrey.shade50,
+        appBar: AppBar(
+          title: Text(widget.customer.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+          backgroundColor: Colors.blueGrey.shade900,
+          foregroundColor: Colors.white,
+            leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
+        ),
+        body: _showBillManagerDashboardInline(),
+      );
+    }
+
+    List<ReceiptItem> roughItems = _appData.where((element) => element.status == "rough").toList();
+    List<ReceiptItem> billedItems = _appData.where((element) => element.status == "billed").toList();
+
+    return Scaffold(
+      backgroundColor: Colors.blueGrey.shade50,
+      appBar: AppBar(
+        title: const Text("ফাইনাল বিল (Final Bill)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        backgroundColor: Colors.blueGrey.shade900,
+        foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: "ড্যাশবোর্ডে ফিরে যান",
+            onPressed: () async {
+              await _persistCurrentState();
+              setState(() { _isWorkspaceOpen = false; });
+            },
+          ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentTabIndex,
+        selectedItemColor: Colors.teal.shade800,
+        unselectedItemColor: Colors.grey.shade500,
+        iconSize: 28,
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        onTap: (index) => setState(() {
+          _currentTabIndex = index;
+          if (index == 0) _isFabVisible = true;
+        }),
+        items: [
+          BottomNavigationBarItem(icon: const Icon(Icons.edit_note), label: "প্যাড (${roughItems.length})"),
+          BottomNavigationBarItem(icon: const Icon(Icons.receipt_long), label: "ফাইনাল বিল (${billedItems.length})"),
+        ],
+      ),
+      floatingActionButton: (_currentTabIndex == 0 && _isFabVisible)
+      ? FloatingActionButton.extended(
+        onPressed: _showAddItemSheet,
+        backgroundColor: Colors.teal.shade700,
+        elevation: 4,
+        icon: const Icon(Icons.add_shopping_cart, color: Colors.white, size: 24),
+        label: const Text("নতুন যোগ করুন", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 16)),
+      )
+      : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      body: IndexedStack(
+        index: _currentTabIndex,
+        children: [
+          _buildRoughPadTab(roughItems),
+          _buildFinalInvoiceTab(billedItems),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoughPadTab(List<ReceiptItem> roughItems) {
+    if (roughItems.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text("প্যাড খালি আছে।\nনতুন কিছু যোগ করুন।", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 20)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(left: 12, right: 12, top: 16, bottom: 90),
+      itemCount: roughItems.length,
+      itemBuilder: (ctx, idx) {
+        var card = roughItems[idx];
+        bool isCurrencyState = (card.currentUnit == "Rupees");
+
+        return Card(
+          color: Colors.white,
+          margin: const EdgeInsets.only(bottom: 16),
+          elevation: 3,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: isCurrencyState ? Colors.green.shade400 : Colors.orange.shade300, width: 2),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text(card.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    GestureDetector(
+                      onTap: () async {
+                        bool confirm = await _confirmAction("ডিলিট করবেন?", "আপনি কি ${card.name} মুছে ফেলতে চান?");
+                        if (confirm) {
+                          setState(() { _appData.removeWhere((e) => e.id == card.id); });
+                          _persistCurrentState();
+                        }
+                      },
+                      child: Icon(Icons.cancel, color: Colors.red.shade400, size: 28),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                Row(
+                  children: [
+                    Text("${card.qty} ", style: TextStyle(fontWeight: FontWeight.w900, color: isCurrencyState ? Colors.green.shade700 : Colors.orange.shade800, fontSize: 28)),
+                    if (!isCurrencyState)
+                      InkWell(
+                        onTap: () => _showChangeUnitSheet(card),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(8)),
+                          child: Row(
+                            children: [
+                              Text(card.currentUnit, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade900, fontSize: 18)),
+                              const SizedBox(width: 4),
+                              Icon(Icons.edit, size: 16, color: Colors.orange.shade900)
+                            ],
+                          ),
+                        ),
+                      )
+                      else
+                        Text("₹", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.green.shade700, fontSize: 28)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+                  child: Text(card.history, style: TextStyle(fontFamily: 'monospace', fontSize: 14, color: Colors.grey.shade800, height: 1.5)),
+                ),
+                const SizedBox(height: 16),
+
+                if (isCurrencyState)
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade50, foregroundColor: Colors.red.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                            onPressed: () {
+                              setState(() {
+                                card.qty = card.prePriceQty;
+                                card.currentUnit = card.originalUnit;
+                              });
+                              _persistCurrentState();
+                            },
+                            child: const Icon(Icons.undo, size: 24),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 3,
+                        child: SizedBox(
+                          height: 50,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                            icon: const Icon(Icons.check_circle_outline, size: 24),
+                            label: const Text("ফাইনাল বিলে পাঠান", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            onPressed: () {
+                              setState(() { card.status = "billed"; });
+                              _persistCurrentState();
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                  else
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: ['+', '-', '×', '÷'].map((op) {
+                        return Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            height: 50,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade50,
+                                foregroundColor: Colors.blue.shade900,
+                                  elevation: 0,
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.blue.shade300, width: 2)),
+                              ),
+                              child: Text(op, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26)),
+                              onPressed: () => _showMathSheet(card, op == '×' ? '*' : (op == '÷' ? '/' : op)),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFinalInvoiceTab(List<ReceiptItem> billedItems) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+              icon: const Icon(Icons.account_balance_wallet),
+              label: const Text("অ্যাডভান্স (জমা) টাকা বাদ দিন", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              onPressed: _showAdvanceMoneySheet,
+            ),
+          ),
+
+          Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade400, width: 1.5)),
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text("ফাইনাল বিল (Final Bill)", textAlign: TextAlign.center, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                Text(widget.customer.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+                const Divider(thickness: 2, height: 24, color: Colors.black),
+
+                if (billedItems.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(40.0),
+                    child: Text("এখনও কোনো আইটেম যোগ করা হয়নি।", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 18)),
+                  )
+                  else
+                    Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(3.5),
+                        1: FlexColumnWidth(1.5),
+                        2: IntrinsicColumnWidth(),
+                      },
+                      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                        children: [
+                          TableRow(
+                            decoration: BoxDecoration(color: Colors.grey.shade200),
+                            children: [
+                              Padding(padding: const EdgeInsets.all(10.0), child: Text("বিবরণ", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade800, fontSize: 13))),
+                              Padding(padding: const EdgeInsets.all(10.0), child: Text("টাকা (₹)", textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade800, fontSize: 13))),
+                              Padding(padding: const EdgeInsets.all(10.0), child: Text("ডিলিট", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade800, fontSize: 13))),
+                            ]
+                          ),
+                          ...billedItems.map((bItem) {
+                            bool isAdvance = bItem.name == "Advance Paid Deducted" || bItem.name == "পূর্বের বকেয়া (Previous Due)";
+
+                            return TableRow(
+                              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 6.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(bItem.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black)),
+                                      if (!isAdvance)
+                                        Text("${bItem.prePriceQty}${bItem.originalUnit} × ${bItem.rate}", style: const TextStyle(color: Colors.black87, fontSize: 13)),
+
+                                        if (!isAdvance && bItem.history.isNotEmpty)
+                                          Container(
+                                            margin: const EdgeInsets.only(top: 6),
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: BorderRadius.circular(6)),
+                                            child: Text(bItem.history.trim().replaceAll('\n', ' | '), style: TextStyle(fontSize: 12, color: Colors.blueGrey.shade800)),
+                                          )
+                                    ],
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 6.0),
+                                  child: Text(bItem.totalPrice.toStringAsFixed(2), textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, color: isAdvance && bItem.totalPrice < 0 ? Colors.red.shade700 : Colors.green.shade800, fontSize: 15)),
+                                ),
+
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent, size: 24),
+                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(8),
+                                  onPressed: () async {
+                                    bool confirm = await _confirmAction("বিল থেকে মুছবেন?", "আপনি কি এই আইটেমটি ফাইনাল বিল থেকে মুছে ফেলতে চান?");
+                                    if (confirm) {
+                                      setState(() {
+                                        if (isAdvance) {
+                                          _appData.remove(bItem);
+                                        } else {
+                                          bItem.status = "rough";
+                                          bItem.currentUnit = bItem.originalUnit;
+                                          bItem.qty = bItem.prePriceQty;
+                                          bItem.rate = 0;
+                                          bItem.totalPrice = 0;
+                                          bItem.history += "\n↩ বিল থেকে ফেরত";
+                                        }
+                                      });
+                                      _persistCurrentState();
+                                    }
+                                  },
+                                )
+                              ]
+                            );
+                          }).toList(),
+                        ],
+                    ),
+
+                    const SizedBox(height: 16),
+                    const Divider(thickness: 2.5, color: Colors.black87),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("মোট বাকি (Total Due):", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text("${_getGrandTotal().toStringAsFixed(2)} টাকা", style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: Colors.green.shade900)),
+                      ],
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          if (billedItems.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CheckboxListTile(
+                  title: const Text(
+                    "গ্রাহককে মোবাইলে মেসেজ (SMS) পাঠান",
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+                  ),
+                  value: _sendSmsOnSave,
+                  activeColor: Colors.teal.shade700,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _sendSmsOnSave = value ?? false;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+
+                SizedBox(
+                  height: 54,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    icon: const Icon(Icons.cloud_upload, size: 24),
+                    label: const Text("সেভ করুন এবং বিল তৈরি করুন", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    onPressed: _exportAndSaveFinalReceipt,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  icon: const Icon(Icons.delete_sweep, size: 24),
+                  label: const Text("পুরো বিল মুছে ফেলুন", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  onPressed: () async {
+                    bool confirm = await _confirmAction("পুরো বিল মুছবেন?", "আপনি কি ফাইনাল বিল থেকে সব আইটেম মুছে ফেলতে চান?");
+                    if (confirm) {
+                      setState(() {
+                        _appData.removeWhere((e) => e.status == "billed");
+                      });
+                      _persistCurrentState();
+                    }
+                  },
+                )
+              ],
+            )
+        ],
+      ),
+    );
+  }
+}*/
+
+
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:sqflite/sqflite.dart';
+import '../db_helper.dart';
+import '../models/customer.dart';
+import '../models/receipt_item.dart';
+import '../utils/sms_helper.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import '../backup_service.dart'; // Adjust path if needed
+
+class CustomerReceiptPage extends StatefulWidget {
+  final Customer customer;
+
+  const CustomerReceiptPage({Key? key, required this.customer}) : super(key: key);
+
+  @override
+  _CustomerReceiptPageState createState() => _CustomerReceiptPageState();
+}
+
+class _CustomerReceiptPageState extends State<CustomerReceiptPage> {
+  final ScrollController _scrollController = ScrollController();
+
+  List<ReceiptItem> _appData = [];
+  List<Map<String, dynamic>> _savedBills = [];
+  String? _editingBillId;
+  String _editingBillDate = "";
+  // true while an already-SAVED bill is being edited. Its DB row stays a valid
+  // finalized bill until the user presses Save, so it is never overwritten by drafts.
+  bool _editingFinalized = false;
+  // serializes DB writes so quick taps can't insert two draft rows
+  Future<void> _persistQueue = Future.value();
+
+  bool _isWorkspaceOpen = false;
+  bool _isLoading = true;
+  bool _sendSmsOnSave = true;
+
+  int _itemIdCounter = 1;
+  int _currentTabIndex = 0;
+  bool _isFabVisible = true;
+  bool _isExporting = false;
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+
+  final Map<String, Map<String, dynamic>> _unitDB = {
+    'Ton(টন)': {'cat': 'weight', 'factorToKG': 1000.0},
+    'Kg(কেজি)': {'cat': 'weight', 'factorToKG': 1.0},
+    'G(গ্রাম)': {'cat': 'weight', 'factorToKG': 0.001},
+    'Piece(টা/টি)': {'cat': 'count'},
+    'Packet(প্যাকেট)': {'cat': 'count'},
+    'Box(বাক্স)': {'cat': 'count'},
+    'Foot(ফুট)': {'cat': 'count'},
+    'SquareFoot(স্কোয়ার ফুট)': {'cat': 'count'},
+    'Day(দিন)': {'cat': 'count'},
+    '--': {'cat': '--'}
+  };
+
+  final List<String> _itemNames = [
+    "Grill(পুরোনো গ্রিল)", "Wages(মজুরি)", "Iron(লোহা)", "Sheet(শিট)", "Bar(বার)",
+    "Pipe(পাইপ)", "Tin(টিন)", "Net(নেট)", "Flower(ফুল)", "Leaf(পাতা)", "Ball(বল)",
+    "Cone(কোন)", "Handel(হ্যান্ডেল)","Design(ডিজাইন)", "Hinges(কব্জা)", "Others(অন্যান্য)"
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _speech = stt.SpeechToText();
+    _loadSavedCalculation();
+    _scrollController.addListener(() {
+      if (_scrollController.position.userScrollDirection == ScrollDirection.reverse) {
+        if (_isFabVisible) setState(() => _isFabVisible = false);
+      } else if (_scrollController.position.userScrollDirection == ScrollDirection.forward) {
+        if (!_isFabVisible) setState(() => _isFabVisible = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedCalculation() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    _savedBills = [];
+    _appData = [];
+    _editingBillId = null;
+    _editingBillDate = "";
+    _editingFinalized = false;
+    _itemIdCounter = 1;
+
+    try {
+      List<Map<String, dynamic>> dbRecords = await DBHelper.getCustomerCalculations(widget.customer.id!);
+      bool draftLoaded = false;
+
+      for (var record in dbRecords) {
+        try {
+          var decoded = jsonDecode(record['calculationJson'].toString());
+
+          bool isDraft = false;
+          List decodedList = [];
+
+          if (decoded is Map) {
+            isDraft = (decoded['type'] == 'draft');
+            decodedList = decoded['items'] ?? [];
+          } else if (decoded is List) {
+            decodedList = decoded;
+            // Fallback for older legacy bills
+            isDraft = decodedList.any((item) => item['status'] == 'rough');
+          }
+
+          final String recDate = record['datetime']?.toString() ?? "";
+
+          if (isDraft) {
+            // Only ONE draft can be the active workspace. Extra stray drafts must
+            // never show up as "saved bills".
+            if (draftLoaded) continue;
+            draftLoaded = true;
+
+            _editingBillId = record['id'].toString();
+            _editingBillDate = recDate;
+            _appData = decodedList.map((e) => ReceiptItem.fromMap(e)).toList();
+
+            if (_appData.isNotEmpty) {
+              _itemIdCounter = _appData.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1;
+            }
+          } else {
+            _savedBills.add({
+              "billId": record['id'].toString(),
+              "date": recDate,
+              "items": decodedList,
+            });
+          }
+        } catch (e) {
+          // one corrupted row must not hide all the other bills
+          debugPrint("Skipping unreadable bill row ${record['id']}: $e");
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading calculation history: $e");
+    }
+
+    double realLiveDue = 0.0;
+    try {
+      final dbClient = await DBHelper.db;
+      final List<Map<String, dynamic>> res = await dbClient.query(
+        "customers",
+        columns: ["due"],
+        where: "id = ?",
+        whereArgs: [widget.customer.id],
+      );
+      if (res.isNotEmpty && res.first['due'] != null) {
+        realLiveDue = double.tryParse(res.first['due'].toString()) ?? 0.0;
+      } else {
+        realLiveDue = double.tryParse(widget.customer.due.toString()) ?? 0.0;
+      }
+    } catch (e) {
+      realLiveDue = double.tryParse(widget.customer.due.toString()) ?? 0.0;
+    }
+
+    setState(() {
+      if (_savedBills.isEmpty && _appData.isEmpty) {
+        _isWorkspaceOpen = true;
+        _isFabVisible = true;
+
+        if (realLiveDue > 0) {
+          _appData.add(ReceiptItem(
+            id: _itemIdCounter++,
+            name: "পূর্বের বকেয়া (Previous Due)",
+            originalUnit: "Rupees",
+            currentUnit: "Rupees",
+            qty: realLiveDue,
+            prePriceQty: realLiveDue,
+            rate: 1,
+            totalPrice: realLiveDue,
+            history: "আগের বাকি টাকা",
+            status: "billed"
+          ));
+        }
+      } else {
+        _isWorkspaceOpen = false;
+      }
+
+      widget.customer.due = realLiveDue.toString();
+      _isLoading = false;
+    });
+  }
+
+
+
+
+
+  String _formatDisplayDate(String dateStr) {
+    if (dateStr.isEmpty) return "";
+
+    DateTime? dt = DateTime.tryParse(dateStr);
+
+    // Fallback for custom formats like "07-09-2026 01:11pm"
+    if (dt == null) {
+      final m = RegExp(r'^(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*([ap]m))?$', caseSensitive: false)
+      .firstMatch(dateStr.trim());
+      if (m != null) {
+        int hour = int.tryParse(m.group(4) ?? '0') ?? 0;
+        final int minute = int.tryParse(m.group(5) ?? '0') ?? 0;
+        final String? ap = m.group(6)?.toLowerCase();
+        if (ap == 'pm' && hour < 12) hour += 12;
+        if (ap == 'am' && hour == 12) hour = 0;
+        dt = DateTime(int.parse(m.group(3)!), int.parse(m.group(2)!), int.parse(m.group(1)!), hour, minute);
+      }
+    }
+
+    if (dt != null) {
+      List<String> months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
+
+      String day = dt.day.toString().padLeft(2, '0');
+      String monthStr = months[dt.month - 1];
+      String yearStr = dt.year.toString().substring(2);
+
+      int hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+      String minuteStr = dt.minute.toString().padLeft(2, '0');
+      String amPm = dt.hour >= 12 ? 'pm' : 'am';
+
+      return "$day $monthStr $yearStr, $hour12:$minuteStr $amPm";
+    }
+
+    return dateStr;
+  }
+
+
+
+
+  // Future<void> _persistCurrentState() async {
+  //   Map<String, dynamic> outputWrapper = {
+  //     "currentDraft": _appData.map((e) => e.toMap()).toList(),
+  //     "savedBills": _savedBills,
+  //   };
+  //   String jsonStr = jsonEncode(outputWrapper);
+  //   await DBHelper.saveReceiptCalculation(widget.customer.id!, jsonStr);
+  // }
+
+
+  /// Queued so that fast consecutive calls run one after another
+  /// (otherwise two calls can both insert a new draft row).
+  Future<void> _persistCurrentState() {
+    _persistQueue = _persistQueue.catchError((_) {}).then((_) => _persistNow());
+    return _persistQueue;
+  }
+
+  Future<void> _persistNow() async {
+    try {
+      // A saved bill that is being edited stays untouched in the DB until Save is pressed.
+      if (_editingFinalized) return;
+
+      // Prevent empty row creation
+      if (_appData.isEmpty && _editingBillId == null) return;
+
+      Map<String, dynamic> wrapper = {
+        "type": "draft",
+        "items": _appData.map((e) => e.toMap()).toList()
+      };
+      String jsonStr = jsonEncode(wrapper);
+
+      final int? existingId = int.tryParse(_editingBillId ?? "");
+      if (existingId != null) {
+        int rows = await DBHelper.updateReceiptCalculation(existingId, jsonStr);
+        if (rows == 0) {
+          // row vanished -> create a fresh draft instead of silently losing the work
+          int newId = await DBHelper.insertReceiptCalculation(widget.customer.id!, jsonStr);
+          _editingBillId = newId.toString();
+        }
+      } else {
+        int newId = await DBHelper.insertReceiptCalculation(widget.customer.id!, jsonStr);
+        _editingBillId = newId.toString();
+      }
+    } catch (e) {
+      debugPrint("Persist error: $e");
+    }
+  }
+
+  /// Throws away the unfinished DRAFT (DB row + memory). A saved bill is never deleted here.
+  Future<void> _discardCurrentDraft() async {
+    await _persistQueue.catchError((_) {});
+    final int? id = int.tryParse(_editingBillId ?? "");
+    if (!_editingFinalized && id != null) {
+      await DBHelper.deleteReceiptCalculation(id);
+    }
+    _editingBillId = null;
+    _editingBillDate = "";
+    _editingFinalized = false;
+  }
+
+  // ==========================================
+  // RECEIPT TAGS INSIDE customers.images
+  // Format: <receipt>ID&amount&date</receipt>, comma separated together with
+  // the normal image paths. Only the tag with the matching bill ID is touched;
+  // every other entry (image paths, other bills' tags) is kept exactly as is.
+  // ==========================================
+  final RegExp _receiptTokenRe = RegExp(r'^\s*<receipt>(\d+)&.*</receipt>\s*$');
+
+  List<String> _splitImages(String? raw) {
+    if (raw == null) return [];
+    return raw
+    .split(',')
+    .where((t) => t.trim().isNotEmpty && t.trim() != 'null')
+    .toList();
+  }
+
+  bool _isTagForBill(String token, int billId) {
+    final m = _receiptTokenRe.firstMatch(token);
+    return m != null && int.tryParse(m.group(1)!) == billId;
+  }
+
+  /// Replaces the receipt tag of [billId] exactly once (in its old position).
+  /// If it does not exist yet it is appended. Old duplicates of the same bill
+  /// ID are removed. Returns the new images string.
+  Future<String> _upsertReceiptTag(int customerId, int billId, String amount, String date) async {
+    final dbClient = await DBHelper.db;
+    String result = '';
+    final newTag = '<receipt>$billId&$amount&$date</receipt>';
+
+    await dbClient.transaction((txn) async {
+      final res = await txn.query("customers", columns: ["images"], where: "id=?", whereArgs: [customerId]);
+      final tokens = _splitImages(res.isEmpty ? null : res.first['images']?.toString());
+
+      final out = <String>[];
+      bool placed = false;
+      for (final t in tokens) {
+        if (_isTagForBill(t, billId)) {
+          if (!placed) {
+            out.add(newTag);
+            placed = true;
+          } // else: duplicate of the same bill -> dropped
+        } else {
+          out.add(t);
+        }
+      }
+      if (!placed) out.add(newTag);
+
+      result = out.join(',');
+      await txn.update("customers", {"images": result}, where: "id=?", whereArgs: [customerId]);
+    });
+    return result;
+  }
+
+  /// Removes only the receipt tag(s) of [billId]. Returns the new images string.
+  Future<String> _removeReceiptTag(int customerId, int billId) async {
+    final dbClient = await DBHelper.db;
+    String result = '';
+
+    await dbClient.transaction((txn) async {
+      final res = await txn.query("customers", columns: ["images"], where: "id=?", whereArgs: [customerId]);
+      final tokens = _splitImages(res.isEmpty ? null : res.first['images']?.toString());
+
+      final out = tokens.where((t) => !_isTagForBill(t, billId)).toList();
+      result = out.join(',');
+      await txn.update("customers", {"images": result}, where: "id=?", whereArgs: [customerId]);
+    });
+    return result;
+  }
+
+  String _lastTenDigits(String phone) {
+    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    return digits.length > 10 ? digits.substring(digits.length - 10) : digits;
+  }
+
+  Future<bool> _confirmAction(String title, String content) async {
+    return await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+        content: Text(content, style: const TextStyle(fontSize: 16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("ক্যান্সেল (Cancel)", style: TextStyle(fontSize: 16, color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("হ্যাঁ (Confirm)", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      )
+    ) ?? false;
+  }
+
+  Widget _showBillManagerDashboardInline() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 3,
+            ),
+            icon: const Icon(Icons.add_circle_outline, size: 26),
+            label: const Text("নতুন বিল তৈরি করুন", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+            onPressed: () async {
+              if (_appData.isNotEmpty) {
+                bool confirm = await _confirmAction("নতুন বিল?", "আপনার বর্তমান কাজ মুছে যাবে। আপনি কি নতুন বিল তৈরি করতে চান?");
+                if (!confirm) return;
+              }
+
+              double realLiveDue = double.tryParse(widget.customer.due.toString()) ?? 0.0;
+
+              await _discardCurrentDraft();
+
+              setState(() {
+                _appData = [];
+                _editingBillId = null;
+                _editingBillDate = "";
+                _editingFinalized = false;
+                _itemIdCounter = 1;
+
+                if (realLiveDue > 0) {
+                  _appData.add(ReceiptItem(
+                    id: _itemIdCounter++,
+                    name: "পূর্বের বকেয়া (Previous Due)",
+                    originalUnit: "Rupees",
+                    currentUnit: "Rupees",
+                    qty: realLiveDue,
+                    prePriceQty: realLiveDue,
+                    rate: 1,
+                    totalPrice: realLiveDue,
+                    history: "আগের বাকি টাকা",
+                    status: "billed"
+                  ));
+                }
+
+                _isWorkspaceOpen = true;
+                _currentTabIndex = 0;
+                _isFabVisible = true;
+              });
+              await _persistCurrentState();
+            },
+          ),
+          const SizedBox(height: 24),
+
+          if (_appData.isNotEmpty) ...[
+            Text("বর্তমান অসম্পূর্ণ বিল (DRAFT)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700, fontSize: 13, letterSpacing: 1.0)),
+            const SizedBox(height: 8),
+            Card(
+              color: Colors.orange.shade50,
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.orange.shade300, width: 1.5)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.edit_document, color: Colors.orange.shade800),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "চলতি কাজ (Active)",
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.orange.shade900),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text("${_appData.length} টি আইটেম প্যাডে আছে।", style: TextStyle(color: Colors.grey.shade800, fontSize: 14)),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade700,
+                        foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 46),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text("কাজ চালিয়ে যান (Resume)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      onPressed: () {
+                        setState(() {
+                          _isWorkspaceOpen = true;
+                          _isFabVisible = true;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          Text("আগের বিলের তালিকা ( ${_savedBills.length})", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700, fontSize: 13, letterSpacing: 1.0)),
+          const SizedBox(height: 8),
+          if (_savedBills.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 30),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.history_toggle_off, size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 8),
+                    Text("কোনো সেভ করা বিল নেই।", style: TextStyle(color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
+                  ],
+                ),
+              ),
+            )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _savedBills.length,
+                itemBuilder: (context, index) {
+                  final bill = _savedBills[index];
+                  List<dynamic> itemsRaw = bill['items'] ?? [];
+
+                  double billTotal = 0.0;
+                  for (var item in itemsRaw) {
+                    if (item['status'] == 'billed') {
+                      billTotal += (item['totalPrice'] as num).toDouble();
+                    }
+                  }
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: 2,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade300)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Text(bill['date'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                //
+                                Text(
+                                  _formatDisplayDate(bill['date'] ?? ""),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis
+                                ),
+
+                                const SizedBox(height: 4),
+                                Text("${itemsRaw.length} টি আইটেম", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.green.shade200)),
+                            child: Text("₹ ${billTotal.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.green.shade800, fontSize: 13)),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                                tooltip: "আপডেট (Update)",
+                                onPressed: () async {
+                                  if (_appData.isNotEmpty) {
+                                    bool confirm = await _confirmAction("বিল লোড করবেন?", "এই বিলটি আপনার বর্তমান কাজ মুছে ফেলবে। লোড করবেন?");
+                                    if (!confirm) return;
+                                  }
+                                  // drop only an unfinished draft; saved bills stay untouched
+                                  await _discardCurrentDraft();
+                                  setState(() {
+                                    _editingBillId = bill['billId'].toString();
+                                    _editingFinalized = true;
+                                    _editingBillDate = bill['date'] ?? "";
+                                    _appData = itemsRaw.map((e) {
+                                      var item = ReceiptItem.fromMap(e);
+                                      item.status = "rough";
+                                      return item;
+                                    }).toList();
+
+                                    if (_appData.isNotEmpty) {
+                                      _itemIdCounter = _appData.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1;
+                                    }
+                                    _isWorkspaceOpen = true;
+                                    _currentTabIndex = 0;
+                                    _isFabVisible = true;
+                                  });
+                                  // no DB write here: the saved bill (and its <receipt> tag)
+                                  // stays valid until the user presses Save.
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.redAccent, size: 20),
+                                tooltip: "ডিলিট (Delete)",
+                                onPressed: () async {
+                                  bool confirm = await _confirmAction(
+                                    "আগের বিল ডিলিট করবেন?",
+                                    "এই বিলটি চিরতরে মুছে যাবে এবং আর ফিরে পাওয়া যাবে না। আপনি কি নিশ্চিত?",
+                                  );
+
+                                  if (confirm) {
+                                    String billIdToDelete = bill['billId'].toString();
+                                    int? billIntId = int.tryParse(billIdToDelete);
+
+                                    if (billIntId != null) {
+                                      // 1. delete the bill row
+                                      await DBHelper.deleteReceiptCalculation(billIntId);
+
+                                      // 2. remove ONLY this bill's <receipt> tag from customers.images
+                                      //    (image paths and other bills' tags are kept)
+                                      final newImages = await _removeReceiptTag(widget.customer.id!, billIntId);
+                                      widget.customer.images = newImages;
+                                    }
+
+                                    // 3. update local state
+                                    setState(() {
+                                      _savedBills.removeWhere((b) => b['billId'].toString() == billIdToDelete);
+                                      if (_editingBillId == billIdToDelete) {
+                                        _editingBillId = null;
+                                        _editingBillDate = "";
+                                        _editingFinalized = false;
+                                        _appData = [];
+                                      }
+                                    });
+
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text("বিলটি সফলভাবে মুছে ফেলা হয়েছে।"),
+                                          backgroundColor: Colors.redAccent,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+
+
+
+
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+        ],
+      ),
+    );
+  }
+
+  void _executeMath(ReceiptItem target, double rawVal, String? sourceName, String sourceUnit, String operator) {
+    double valToAddOrSub = rawVal;
+    String conversionNote = "";
+
+    if ((operator == '+' || operator == '-') && _unitDB.containsKey(sourceUnit) && _unitDB.containsKey(target.currentUnit)) {
+      var sInfo = _unitDB[sourceUnit]!;
+      var tInfo = _unitDB[target.currentUnit]!;
+
+      if (sInfo['cat'] == tInfo['cat'] && sInfo['factorToKG'] != null && tInfo['factorToKG'] != null) {
+        double valInBase = rawVal * sInfo['factorToKG'];
+        valToAddOrSub = valInBase / tInfo['factorToKG'];
+        if (valToAddOrSub != rawVal) {
+          conversionNote = " [Auto]";
+        }
+      }
+    }
+
+    setState(() {
+      String logText = sourceName != null
+      ? "\n$operator $rawVal $sourceUnit $sourceName$conversionNote"
+      : "\n$operator $rawVal ${sourceUnit == "Rupees" ? "₹" : (sourceUnit == "একই (Same)" ? "" : sourceUnit)}";
+
+      if (operator == '+') {
+        target.qty += valToAddOrSub;
+        target.history += logText;
+      } else if (operator == '-') {
+        target.qty -= valToAddOrSub;
+        target.history += logText;
+      } else if (operator == '/') {
+        if (rawVal != 0) {
+          target.qty /= rawVal;
+          target.history += logText;
+        }
+      } else if (operator == '*') {
+        if (sourceUnit == "Rupees") {
+          target.prePriceQty = target.qty;
+          target.originalUnit = target.currentUnit;
+          target.rate = rawVal;
+          target.totalPrice = target.qty * rawVal;
+          target.qty = target.totalPrice;
+          target.currentUnit = "Rupees";
+          target.history += "\n× $rawVal টাকা";
+        } else {
+          target.qty *= rawVal;
+          if (sourceUnit != "একই (Same)") {
+            target.currentUnit = sourceUnit;
+          }
+          target.history += logText;
+        }
+      }
+      target.qty = double.parse(target.qty.toStringAsFixed(3));
+    });
+    _persistCurrentState();
+  }
+
+  void _showAddItemSheet() {
+    String selectedItem = 'Iron(লোহা)';
+    String selectedUnit = 'Kg(কেজি)';
+    TextEditingController qtyController = TextEditingController();
+    TextEditingController customNameController = TextEditingController();
+    bool isCustom = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20, top: 24, left: 20, right: 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text("প্যাডে যোগ করুন (Add to Pad)", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blueGrey), textAlign: TextAlign.center),
+                      const SizedBox(height: 20),
+
+                      DropdownButtonFormField<String>(
+                        value: selectedItem,
+                        isExpanded: true,
+                        decoration: InputDecoration(labelText: "মালপত্র/কাজের নাম (Item)", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                        items: _itemNames.map((String val) => DropdownMenuItem(value: val, child: Text(val, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))).toList(),
+                        onChanged: (val) {
+                          selectedItem = val!;
+                          if (selectedItem == 'Others(অন্যান্য)') {
+                            isCustom = true;
+                            selectedUnit = 'Piece(টা/টি)';
+                          } else {
+                            isCustom = false;
+                            if (['Iron(লোহা)', 'Sheet(শিট)', 'Tin(টিন)', 'Pipe(পাইপ)', 'Grill(পুরোনো গ্রিল)'].contains(selectedItem)) {
+                              selectedUnit = 'Kg(কেজি)';
+                            } else if (['Wages(মজুরি)'].contains(selectedItem)) {
+                              selectedUnit = 'Day(দিন)';
+                            } else {
+                              selectedUnit = 'Piece(টা/টি)';
+                            }
+                          }
+                          setModalState((){});
+                        },
+                      ),
+
+                      if (isCustom) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: customNameController,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          decoration: InputDecoration(
+                            labelText: "আইটেমের নাম লিখুন (Custom Name)",
+                            hintText: "নিজের মতো নাম লিখুন",
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _isListening ? Icons.mic : Icons.mic_none,
+                                color: _isListening ? Colors.redAccent : Colors.grey.shade400,
+                                size: 26,
+                              ),
+                              onPressed: () async {
+                                if (_isListening) {
+                                  _speech.stop();
+                                  setModalState(() => _isListening = false);
+                                } else {
+                                  bool available = await _speech.initialize();
+                                  if (available) {
+                                    setModalState(() => _isListening = true);
+                                    _speech.listen(
+                                      localeId: "bn_IN",
+                                      onResult: (result) {
+                                        setModalState(() {
+                                          customNameController.text = result.recognizedWords;
+                                          if (result.finalResult) {
+                                            _isListening = false;
+                                          }
+                                        });
+                                      },
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 16),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: TextField(
+                              controller: qtyController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              decoration: InputDecoration(labelText: "পরিমাণ (Qty)", hintText: "0.0", border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 4,
+                            child: DropdownButtonFormField<String>(
+                              value: selectedUnit,
+                              isExpanded: true,
+                              decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                              items: _unitDB.keys.map((String val) => DropdownMenuItem(value: val, child: Text(val, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)))).toList(),
+                              onChanged: (val) => setModalState(() => selectedUnit = val!),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                        onPressed: () {
+                          double? qty = double.tryParse(qtyController.text);
+                          if (qty != null) {
+                            String finalName = isCustom && customNameController.text.trim().isNotEmpty
+                            ? customNameController.text.trim()
+                            : selectedItem;
+
+                            setState(() {
+                              _appData.add(ReceiptItem(id: _itemIdCounter++, name: finalName, originalUnit: selectedUnit, currentUnit: selectedUnit, qty: qty, prePriceQty: qty, rate: 0, totalPrice: 0, history: "$qty $selectedUnit", status: "rough"));
+                            });
+                            _persistCurrentState();
+                            Navigator.pop(context);
+                          }
+                        },
+                        child: const Text("যোগ করুন (ADD)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  void _showMathSheet(ReceiptItem target, String operatorStr) {
+    TextEditingController valController = TextEditingController();
+    String targetCat = _unitDB[target.currentUnit]?['cat'] ?? '';
+    List<String> unitsAllowed = [];
+
+    if (operatorStr == '+' || operatorStr == '-') {
+      unitsAllowed = _unitDB.keys.where((k) => _unitDB[k]?['cat'] == targetCat).toList();
+    } else if (operatorStr == '*') {
+      unitsAllowed = ['Rupees', 'একই (Same)', ..._unitDB.keys];
+    } else {
+      unitsAllowed = ['একই (Same)'];
+    }
+
+    String selectedUnit = unitsAllowed.first;
+    List<ReceiptItem> compatibleCards = _appData.where((i) => i.id != target.id && i.status == "rough" && (operatorStr == '*' || _unitDB[i.currentUnit]?['cat'] == targetCat)).toList();
+
+    setState(() => _isFabVisible = false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20, top: 24, left: 20, right: 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text("হিসাব করুন: [ $operatorStr ] ${target.name}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey), textAlign: TextAlign.center),
+                      const SizedBox(height: 20),
+
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 5,
+                                  child: TextField(
+                                    controller: valController,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                                    decoration: InputDecoration(labelText: "পরিমাণ লিখুন", hintText: "0.0", filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 4,
+                                  child: DropdownButtonFormField<String>(
+                                    value: selectedUnit,
+                                    isExpanded: true,
+                                    decoration: InputDecoration(filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                                    items: unitsAllowed.map((String val) => DropdownMenuItem(value: val, child: Text(val == 'Rupees' ? 'টাকা (₹)' : val, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)))).toList(),
+                                    onChanged: (val) => setModalState(() => selectedUnit = val!),
+                                  ),
+                                )
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+                              onPressed: () {
+                                double? v = double.tryParse(valController.text);
+                                if (v != null) {
+                                  _executeMath(target, v, null, selectedUnit, operatorStr);
+                                  Navigator.pop(context);
+                                }
+                              },
+                              child: const Text("হিসাব করুন (APPLY)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                            )
+                          ],
+                        ),
+                      ),
+
+                      if (compatibleCards.isNotEmpty && (operatorStr == '+' || operatorStr == '-')) ...[
+                        const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Text("অথবা অন্য আইটেমের ওজন নিন:", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey), textAlign: TextAlign.center)),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: compatibleCards.map((srcCard) {
+                            return ActionChip(
+                              backgroundColor: Colors.green.shade50,
+                              side: BorderSide(color: Colors.green.shade300, width: 1.5),
+                              padding: const EdgeInsets.all(10),
+                              label: Text("${srcCard.name} (${srcCard.qty} ${srcCard.currentUnit})", style: TextStyle(fontSize: 14, color: Colors.green.shade900, fontWeight: FontWeight.bold)),
+                              onPressed: () {
+                                _executeMath(target, srcCard.qty, srcCard.name, srcCard.currentUnit, operatorStr);
+                                Navigator.pop(context);
+                              },
+                            );
+                          }).toList(),
+                        )
+                      ]
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+        );
+      }
+    ).then((_) {
+      setState(() => _isFabVisible = true);
+    });
+  }
+
+  void _showChangeUnitSheet(ReceiptItem card) {
+    String selectedUnit = card.currentUnit;
+    String targetCat = _unitDB[card.currentUnit]?['cat'] ?? '';
+    List<String> unitsAllowed = _unitDB.keys.where((k) => _unitDB[k]?['cat'] == targetCat).toList();
+
+    if (unitsAllowed.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 16, top: 20, left: 20, right: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text("ইউনিট পরিবর্তন: ${card.name}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              DropdownButtonFormField<String>(
+                value: selectedUnit,
+                isExpanded: true,
+                decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                items: [
+                  for (final val in unitsAllowed)
+                    DropdownMenuItem(value: val, child: Text(val, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)))
+                ],
+                onChanged: (val) => selectedUnit = val!,
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade800, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
+                onPressed: () {
+                  setState(() {
+                    if (card.currentUnit != selectedUnit) {
+                      final double? oldF = (_unitDB[card.currentUnit]?['factorToKG'] as num?)?.toDouble();
+                      final double? newF = (_unitDB[selectedUnit]?['factorToKG'] as num?)?.toDouble();
+                      // count units (Piece/Box/...) have no weight factor -> only the label changes
+                      if (oldF != null && newF != null) {
+                        card.qty = double.parse((card.qty * oldF / newF).toStringAsFixed(3));
+                      }
+                      card.currentUnit = selectedUnit;
+                      card.history += "\n[Manual Swap -> $selectedUnit]";
+                    }
+                  });
+                  _persistCurrentState();
+                  Navigator.pop(context);
+                },
+                child: const Text("সেভ করুন (CONFIRM)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              )
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  void _showAdvanceMoneySheet() async {
+    final db = await DBHelper.db;
+    List<Map<String, dynamic>> transactions = await db.query('transactions', where: 'customerId = ?', whereArgs: [widget.customer.id]);
+
+    List<Map<String, dynamic>> modifiableTransactions = List<Map<String, dynamic>>.from(transactions);
+
+    double currentDue = double.tryParse(widget.customer.due) ?? 0.0;
+    if (currentDue < 0) {
+      double advanceAmount = currentDue.abs();
+
+      modifiableTransactions.insert(0, {
+        "id": -999,
+        "customerId": widget.customer.id,
+        "amount": advanceAmount.toString(),
+        "date": "বর্তমান জমা (Current Advance)",
+        "note": "অ্যাডভান্স জমা থেকে কাটা হবে"
+      });
+    }
+
+    if (!mounted) return;
+    if (modifiableTransactions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("কোনো জমার রেকর্ড নেই!")));
+      return;
+    }
+
+    List<Map<String, dynamic>> selectedTxs = [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            double selectedTotal = selectedTxs.fold(0.0, (sum, tx) => sum + (double.tryParse(tx['amount'].toString()) ?? 0.0));
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text("অ্যাডভান্স টাকা বেছে নিন", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                  const Text("ফাইনাল বিল থেকে বাদ দেওয়ার জন্য সিলেক্ট করুন।", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                  const Divider(),
+
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: modifiableTransactions.length,
+                      itemBuilder: (context, index) {
+                        var tx = modifiableTransactions[index];
+                        bool isSelected = selectedTxs.any((element) => element['id'] == tx['id']);
+
+                        return CheckboxListTile(
+                          title: Text("অ্যাডভান্স: ₹ ${tx['amount']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.green)),
+                          subtitle: Text("তারিখ: ${tx['date']}\nনোট: ${tx['note']}"),
+                          value: isSelected,
+                          onChanged: (val) {
+                            setModalState(() {
+                              if (val == true) {
+                                if (!selectedTxs.any((element) => element['id'] == tx['id'])) {
+                                  selectedTxs.add(tx);
+                                }
+                              } else {
+                                selectedTxs.removeWhere((element) => element['id'] == tx['id']);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("মোট বাদ যাবে:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text("₹ ${selectedTotal.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade900, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
+                    onPressed: selectedTotal <= 0 ? null : () {
+                      setState(() {
+                        _appData.add(ReceiptItem(
+                          id: _itemIdCounter++,
+                          name: "Advance Paid Deducted",
+                          originalUnit: "Rupees",
+                          currentUnit: "Rupees",
+                          qty: -selectedTotal,
+                          prePriceQty: -selectedTotal,
+                          rate: 1,
+                          totalPrice: -selectedTotal,
+                          history: "${selectedTxs.length} ট্রানজাকশন থেকে",
+                          status: "billed"
+                        ));
+                      });
+                      _persistCurrentState();
+                      Navigator.pop(context);
+                    },
+                    child: const Text("অ্যাডভান্স বাদ দিন", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  )
+                ],
+              ),
+            );
+          }
+        );
+      }
+    );
+  }
+
+  // Future<void> _exportAndSaveFinalReceipt() async {
+  //   FocusScope.of(context).unfocus();
+  //
+  //   setState(() {
+  //     _currentTabIndex = 1;
+  //     _isExporting = true;
+  //   });
+  //
+  //   showDialog(context: context, barrierDismissible: false, builder: (ctx) => const Center(child: CircularProgressIndicator()));
+  //
+  //   try {
+  //     // --- LOGIC: CREATE SIMPLE ID (1, 2, 3...) ---
+  //     String newBillId = _editingBillId ?? "";
+  //     if (newBillId.isEmpty) {
+  //       int maxId = 0;
+  //       for (var bill in _savedBills) {
+  //         int currentId = int.tryParse(bill['billId']?.toString() ?? "0") ?? 0;
+  //         if (currentId > maxId) {
+  //           maxId = currentId;
+  //         }
+  //       }
+  //       newBillId = (maxId + 1).toString(); // Increments simply 1, 2, 3...
+  //     }
+  //
+  //     DateTime timeNow = DateTime.now();
+  //     String customDateStamp = "${timeNow.day.toString().padLeft(2, '0')}-${timeNow.month.toString().padLeft(2, '0')}-${timeNow.year} ${timeNow.hour.toString().padLeft(2, '0')}:${timeNow.minute.toString().padLeft(2, '0')}";
+  //
+  //     // --- LOGIC: ONLY SAVING TEXT TAG, NO IMAGE FILE ---
+  //     String receiptTag = "<receipt>$newBillId&$customDateStamp</receipt>";
+  //
+  //     List<String> userImages = widget.customer.images.split(",").where((s) => s.trim().isNotEmpty).toList();
+  //     userImages.add(receiptTag);
+  //     // WE NO LONGER ADD filePath HERE!
+  //
+  //     await DBHelper.updateCustomerImages(widget.customer.id!, userImages.join(","));
+  //     widget.customer.images = userImages.join(",");
+  //
+  //     // --- SAVE NEW DUE TO DATABASE ---
+  //     double finalDue = _getGrandTotal();
+  //     await DBHelper.updateCustomerDue(widget.customer.id!, finalDue);
+  //     widget.customer.due = finalDue.toString();
+  //
+  //     // --- SEND SMS AND LOG TO DB ---
+  //     if (_sendSmsOnSave && widget.customer.phone.isNotEmpty && finalDue > 0) {
+  //       try {
+  //         String? status = await DBHelper.getStatus();
+  //         String msg;
+  //
+  //         if (status == "active") {
+  //           msg = "Dear ${widget.customer.name}\nYour bill is generated. "
+  //           "Your current due is Rs. ${finalDue.toStringAsFixed(2)}. "
+  //           "If any queries, contact us.\n\n- Asha Grill House\n"
+  //           "View details: https://ashagrillhouse.github.io/site/receipt.html?q=${widget.customer.phone.replaceAll(RegExp(r'\D'), '').substring(widget.customer.phone.replaceAll(RegExp(r'\D'), '').length - 10)}";
+  //         }
+  //         else {
+  //           msg = "Dear ${widget.customer.name}\nYour bill is generated. "
+  //           "Your current due is Rs. ${finalDue.toStringAsFixed(2)}. "
+  //           "If any queries, contact us.\n\n- Asha Grill House";
+  //         }
+  //
+  //         await SmsHelper.sendSMS(
+  //           phone: widget.customer.phone,
+  //           message: msg,
+  //         );
+  //
+  //         String nowStr = "${timeNow.day}-${timeNow.month}-${timeNow.year} ${timeNow.hour}:${timeNow.minute}";
+  //         await DBHelper.insertMessage(widget.customer.id!, msg, nowStr);
+  //       } catch (smsError) {
+  //         debugPrint("SMS Error: $smsError");
+  //       }
+  //     }
+  //
+  //     // --- UPDATE JSON HISTORY LOG ---
+  //     List<ReceiptItem> finalizedItems = _appData.where((e) => e.status == "billed").toList();
+  //     if (finalizedItems.isEmpty) throw Exception("Cannot compile empty invoice.");
+  //
+  //     Map<String, dynamic> completeBillObj = {
+  //       "billId": newBillId,
+  //       "date": _editingBillId != null ? _editingBillDate : customDateStamp,
+  //       "items": finalizedItems.map((e) => e.toMap()).toList(),
+  //     };
+  //
+  //     if (_editingBillId != null) {
+  //       int originalIdx = _savedBills.indexWhere((b) => b['billId'].toString() == _editingBillId);
+  //       if (originalIdx != -1) {
+  //         _savedBills[originalIdx] = completeBillObj;
+  //       } else {
+  //         _savedBills.add(completeBillObj);
+  //       }
+  //     } else {
+  //       _savedBills.add(completeBillObj);
+  //     }
+  //
+  //     _appData = [];
+  //     _editingBillId = null;
+  //     _editingBillDate = "";
+  //     _itemIdCounter = 1;
+  //
+  //     await _persistCurrentState();
+  //
+  //     Navigator.pop(context); // Close loading dialog
+  //     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("বিল সেভ হয়েছে এবং বকেয়া আপডেট করা হয়েছে!"), backgroundColor: Colors.green));
+  //
+  //     setState(() {
+  //       _isWorkspaceOpen = false;
+  //     });
+  //   } catch (e) {
+  //     Navigator.pop(context);
+  //     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+  //   } finally {
+  //     setState(() => _isExporting = false);
+  //   }
+  // }
+  Future<void> _exportAndSaveFinalReceipt() async {
+    FocusScope.of(context).unfocus();
+
+    // Validate BEFORE touching the database
+    final List<ReceiptItem> finalizedItems = _appData.where((e) => e.status == "billed").toList();
+    if (finalizedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("ফাইনাল বিলে কোনো আইটেম নেই!"), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    setState(() {
+      _currentTabIndex = 1;
+      _isExporting = true;
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // let any pending draft write finish first
+      await _persistQueue.catchError((_) {});
+
+      // 1. Final total
+      double finalDue = _getGrandTotal();
+      String amountStr = finalDue.toStringAsFixed(2);
+
+      // 2. Date & time in 12-hour format (e.g., 27-08-2026 12:00pm)
+      DateTime timeNow = DateTime.now();
+      int hour12 = timeNow.hour % 12 == 0 ? 12 : timeNow.hour % 12;
+      String amPm = timeNow.hour >= 12 ? 'pm' : 'am';
+      String timeStr = "${hour12.toString().padLeft(2, '0')}:${timeNow.minute.toString().padLeft(2, '0')}$amPm";
+      String customDateStamp = "${timeNow.day.toString().padLeft(2, '0')}-${timeNow.month.toString().padLeft(2, '0')}-${timeNow.year} $timeStr";
+
+      // 3. Save the bill row FIRST so the receipt tag always uses the REAL database ID
+      Map<String, dynamic> finalWrapper = {
+        "type": "finalized",
+        "items": finalizedItems.map((e) => e.toMap()).toList()
+      };
+      String finalJsonStr = jsonEncode(finalWrapper);
+
+      int billId;
+      final int? editingId = int.tryParse(_editingBillId ?? "");
+      if (editingId != null) {
+        int rows = await DBHelper.updateReceiptCalculation(editingId, finalJsonStr);
+        billId = rows > 0
+        ? editingId
+        : await DBHelper.insertReceiptCalculation(widget.customer.id!, finalJsonStr);
+      } else {
+        billId = await DBHelper.insertReceiptCalculation(widget.customer.id!, finalJsonStr);
+      }
+
+      // 4. <receipt>ID&Amount&datetime</receipt> -> replaced exactly once for this ID
+      //    (new bill = added, edited bill = old tag overwritten, no duplicates).
+      //    Normal image paths in the same column are left untouched.
+      final newImages = await _upsertReceiptTag(widget.customer.id!, billId, amountStr, customDateStamp);
+      widget.customer.images = newImages;
+
+      // 5. New due
+      await DBHelper.updateCustomerDue(widget.customer.id!, finalDue);
+      widget.customer.due = finalDue.toString();
+
+      // 6. SMS + log (never blocks the save)
+      if (_sendSmsOnSave && widget.customer.phone.isNotEmpty && finalDue > 0) {
+        try {
+          String? status = await DBHelper.getStatus();
+          String msg;
+
+          if (status == "active") {
+            msg = "Dear ${widget.customer.name}\nYour bill is generated. "
+            "Your current due is Rs. $amountStr. "
+            "If any queries, contact us.\n\n- Asha Grill House\n"
+            "View details: https://ashagrillhouse.github.io/site/bill.html?q=${_lastTenDigits(widget.customer.phone)}";
+          } else {
+            msg = "Dear ${widget.customer.name}\nYour bill is generated. "
+            "Your current due is Rs. $amountStr. "
+            "If any queries, contact us.\n\n- Asha Grill House";
+          }
+
+          await SmsHelper.sendSMS(
+            phone: widget.customer.phone,
+            message: msg,
+          );
+
+          await DBHelper.insertMessage(widget.customer.id!, msg, customDateStamp);
+        } catch (smsError) {
+          debugPrint("SMS Error: $smsError");
+        }
+      }
+
+      BackupService.autoBackupOnAppOpen();
+
+      // 7. Reload everything from the database (also clears workspace state)
+      await _loadSavedCalculation();
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close progress dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("বিল সেভ হয়েছে এবং বকেয়া আপডেট করা হয়েছে!"), backgroundColor: Colors.green),
+      );
+
+      setState(() {
+        _isWorkspaceOpen = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  // (old duplicated-tag version removed)
 
   double _getGrandTotal() => _appData.where((e) => e.status == "billed").fold(0.0, (sum, item) => sum + item.totalPrice);
 

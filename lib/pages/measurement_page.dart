@@ -8,6 +8,7 @@ import 'measurement_detail_page.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:call_log/call_log.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../backup_service.dart';
 
 class MeasurementPage extends StatefulWidget {
   @override
@@ -239,6 +240,7 @@ class _MeasurementPageState extends State<MeasurementPage> {
 
       // 3. Delete the parent profile from tempcustomer
       await DBHelper.deleteMeasurement(m.id!);
+      BackupService.autoBackupOnAppOpen();
 
       _loadMeasurements();
 
@@ -599,12 +601,13 @@ class _MeasurementPageState extends State<MeasurementPage> {
                               if (_formKey.currentState!.validate()) {
                                 Measurement newRecord = Measurement(
                                   name: _nameController.text.trim(),
-                                  phone: _phoneController.text.trim(),
+                                  phone: _phoneController.text.trim()=="+91"?"":_phoneController.text.trim(),
                                   address: _addressController.text.trim(),
                                   createdAt: DateTime.now().toIso8601String(),
                                 );
 
                                 await DBHelper.insertMeasurement(newRecord);
+                                BackupService.autoBackupOnAppOpen();
 
                                 List<Measurement> updatedList = await DBHelper.getMeasurements();
                                 Measurement createdRecord = updatedList.lastWhere(

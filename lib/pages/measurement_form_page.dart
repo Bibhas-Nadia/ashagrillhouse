@@ -8,6 +8,7 @@ import '../models/measurement.dart';
 import '../db_helper.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../backup_service.dart';
 
 class MeasurementFormPage extends StatefulWidget {
   final Measurement customer;
@@ -315,6 +316,7 @@ Future<String> _getDir() async {
       'images': _imageFile?.path ?? '',
       'createdAt': DateTime.now().toIso8601String(),
     });
+    BackupService.autoBackupOnAppOpen();
 
     if (mounted) {
       Navigator.pop(context, true);

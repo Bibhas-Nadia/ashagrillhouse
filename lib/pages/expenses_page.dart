@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../db_helper.dart';
+import '../backup_service.dart';
 
 class ExpensesPage extends StatefulWidget {
   @override
@@ -44,6 +45,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
       _applyFilterAndSum();
     });
   }
+
 
   // 💰 Easy Money Formatter (e.g. 100000 -> 1,00,000)
   String _formatMoney(dynamic amountStr) {
@@ -232,6 +234,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
             onPressed: () async {
               Navigator.pop(context);
               await DBHelper.deleteExpense(id);
+              BackupService.autoBackupOnAppOpen();
               loadExpenses();
             },
             child: const Text("DELETE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -259,6 +262,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
             onPressed: () async {
               if (kwController.text.trim().isNotEmpty) {
                 await DBHelper.insertExpenseKeyword(kwController.text.trim());
+                BackupService.autoBackupOnAppOpen();
                 Navigator.pop(context);
                 loadExpenses(); // Refresh keywords
               }
@@ -284,6 +288,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () async {
               await DBHelper.deleteExpenseKeyword(keyword);
+              BackupService.autoBackupOnAppOpen();
               Navigator.pop(context);
               loadExpenses(); // Refresh keywords
             },
@@ -604,6 +609,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                         'date': formattedDate,
                       });
 
+                      BackupService.autoBackupOnAppOpen();
                       Navigator.pop(context);
                       loadExpenses(); // 🔥 This forces the UI to refresh with the new data
                     },

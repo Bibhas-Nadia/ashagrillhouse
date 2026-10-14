@@ -14,6 +14,7 @@ import 'documentation_page.dart';
 import 'transaction_history_page.dart';
 import 'database_studio.dart';
 import 'geometry_calculator_page.dart';
+import 'customer_feedback_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -159,6 +160,12 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _buildDrawerItem(
                   context,
+                  icon: Icons.star_rate_rounded,
+                  title: "Customer Feedback",
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerFeedbackPage())),
+                ),
+                _buildDrawerItem(
+                  context,
                   icon: Icons.file_download_rounded,
                   title: "Import Data",
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ImportPage())),
@@ -226,7 +233,7 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 24.0, top: 8.0),
             child: Text(
-              "App Version 3.1.0",
+              "App Version 3.2.0",
               style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),

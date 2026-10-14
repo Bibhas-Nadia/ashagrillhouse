@@ -442,6 +442,9 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
                           'images': savedImagePath,
                           'createdAt': DateTime.now().toIso8601String(),
                         });
+
+                        BackupService.autoBackupOnAppOpen();
+
                         _loadRecords();
                       }
                     },
@@ -692,6 +695,7 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
                     );
                     if (confirm == true) {
                       await DBHelper.deleteDetailedMeasurement(item['id']);
+                      BackupService.autoBackupOnAppOpen();
                       _loadRecords();
                     }
                   },

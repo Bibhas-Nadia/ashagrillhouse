@@ -12,7 +12,7 @@ import 'pages/splash_screen.dart';
 import 'pages/payment_page.dart';
 
 import 'app_updater.dart';
-import 'backup_service.dart'; // 1. Import the new file
+//import 'backup_service.dart'; // 1. Import the new file
 
 // 1. Define a Global Navigator Key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -89,7 +89,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     //_triggerGlobalBackup();
 
     // // 2. Trigger the silent backup when the app opens
-    BackupService.autoBackupOnAppOpen();
+    //BackupService.autoBackupOnAppOpen();
 
     // 🔴 ADD THIS: Check for updates as soon as the main screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {

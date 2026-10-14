@@ -426,43 +426,12 @@ Future<String> getDir() async {
         String finalDue = due.text.trim().isEmpty ? "0" : due.text.trim();
 
 
-//         int generatedId = await DBHelper.insert(Customer(
-//           name: name.text.trim(),
-//           phone: fullPhone,
-//           address: address.text.trim(),
-//           due: finalDue,
-//           images: imgPaths,
-//           createdAt: now,
-//         ));
-//
 
-        // Customer newCustomer = Customer(
-        //   name: customerName,
-        //   phone: customerPhone,
-        //   address: address.text.trim(),
-        //   due: finalDue,
-        //   images: imgPaths,
-        //   createdAt: now,
-        // );
-        //
-        // int generatedId = await DBHelper.insert(newCustomer);
-        // newCustomer.id = generatedId;
-        //
-        //
-        // double dueAmount = double.tryParse(finalDue) ?? 0;
-        //
-        // if (sendSms && customerPhone.isNotEmpty && dueAmount > 0) {
-        //   // String msg = SmsHelper.buildDueMessage(
-        //   //   name: customerName,
-        //   //   amount: dueAmount.toStringAsFixed(0),
-        //   // );
-        //   String? status = await DBHelper.getStatus();
-        //
-        //   String msg;
-        //
-        //   // 2. Check if status is "active"
-        //   if (status == "active") {
 
+
+
+
+/*
             Customer newCustomer = Customer(
               name: customerName,
               phone: customerPhone,
@@ -503,17 +472,6 @@ Future<String> getDir() async {
           }
 
 
-
-          // await SmsHelper.sendSMS(
-          //   phone: customerPhone,
-          //   message: msg,
-          // );
-          //
-          // await DBHelper.insertMessage(generatedId,msg,now);
-
-
-          // ✅ NEW ORDER
-
           // 1. Save message to Local Database FIRST
           await DBHelper.insertMessage(generatedId, msg, now);
 
@@ -529,6 +487,87 @@ Future<String> getDir() async {
 
           print("SMS sent Successfully");
         }
+        */
+
+
+
+        Customer newCustomer = Customer(
+          name: customerName,
+          phone: customerPhone,
+          address: address.text.trim(),
+          due: finalDue,
+          images: imgPaths,
+          createdAt: now,
+        );
+
+        int generatedId = await DBHelper.insert(newCustomer);
+        newCustomer.id = generatedId;
+
+        double dueAmount = double.tryParse(finalDue) ?? 0;
+
+        // 🔥 FIX: Immediately save the initial due to history to prevent data loss
+        await DBHelper.updateCustomerDue(generatedId, dueAmount);
+
+        // ========================================================
+        // 🔥 MOVED BACKUP CALL HERE SO IT RUNS FOR EVERY ENTRY
+        // ========================================================
+        BackupService.autoBackupOnAppOpen();
+
+        if (sendSms && customerPhone.isNotEmpty && dueAmount > 0) {
+          String? status = await DBHelper.getStatus();
+
+          String msg;
+
+          // 2. Check if status is "active"
+          if (status == "active") {
+
+            // Message for Active Status
+            msg = "Dear $customerName\nYour bill is generated. "
+            "Your current due is Rs. ${dueAmount}. "
+            "If any queries, contact us.\n\n- Asha Grill House\n"
+            "View details: https://ashagrillhouse.github.io/site/bill.html?q=${customerPhone.replaceAll(RegExp(r'\D'), '').substring(customerPhone.replaceAll(RegExp(r'\D'), '').length - 10)}";
+
+          }
+          else {
+            // 3. Message for Inactive or any other status
+            msg = "Dear $customerName\nYour bill is generated. "
+            "Your current due is Rs. ${dueAmount}. "
+            "If any queries, contact us.\n\n- Asha Grill House";
+          }
+
+
+
+          // await SmsHelper.sendSMS(
+          //   phone: customerPhone,
+          //   message: msg,
+          // );
+          //
+          // await DBHelper.insertMessage(generatedId,msg,now);
+
+
+          // ✅ NEW ORDER
+
+          // 1. Save message to Local Database FIRST
+          await DBHelper.insertMessage(generatedId, msg, now);
+
+          // (Removed BackupService from here, it's now above the if statement)
+
+          // 3. Open SMS App LAST
+          await SmsHelper.sendSMS(
+            phone: customerPhone,
+            message: msg,
+          );
+
+
+          print("SMS sent Successfully");
+        }
+
+
+
+
+
+
+
 
         // SHOW SUCCESS POPUP
         AppPopup.show(

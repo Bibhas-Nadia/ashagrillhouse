@@ -169,18 +169,37 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
             SizedBox(
               width: MediaQuery.of(context).size.width,
               height: MediaQuery.of(context).size.height,
-              child: InteractiveViewer(
-                panEnabled: true,
-                minScale: 0.5,
-                maxScale: 6.0,
-                clipBehavior: Clip.none, // Allows zooming beyond bounds like normal images
-                child: Center(
-                  child: Container(
-                    width: MediaQuery.of(context).size.width * 0.92,
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.85,
-                    ),
-                    padding: const EdgeInsets.all(20),
+
+
+//               child: InteractiveViewer(
+//                 panEnabled: true,
+//                 minScale: 0.5,
+//                 maxScale: 6.0,
+//                 clipBehavior: Clip.none, // Allows zooming beyond bounds like normal images
+//                 child: Center(
+//                   child: Container(
+//                     width: MediaQuery.of(context).size.width * 0.92,
+//                     constraints: BoxConstraints(
+//                       maxHeight: MediaQuery.of(context).size.height * 0.85,
+//                     ),
+//                     padding: const EdgeInsets.all(20),
+//
+                  child: InteractiveViewer(
+                    constrained: false, // long receipt: 1 finger = scroll, 2 fingers = zoom
+                    panEnabled: true,
+                    scaleEnabled: true,
+                    minScale: 0.5,
+                    maxScale: 6.0,
+                    boundaryMargin: const EdgeInsets.all(24),
+                    child: Container(
+                      width: MediaQuery.of(context).size.width,
+                      constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height),
+                      alignment: Alignment.center, // short receipts stay in the middle
+                      child: Container(
+                        width: MediaQuery.of(context).size.width * 0.94,
+                        padding: const EdgeInsets.all(20),
+
+
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
@@ -240,11 +259,16 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
                             ),
                             const Divider(height: 10, thickness: 1),
 
-                            // Scrollable Items Section
-                            Flexible(
-                              child: SingleChildScrollView(
-                                child: Column(
-                                  children: items.asMap().entries.map((entry) {
+                            // // Scrollable Items Section
+                            // Flexible(
+                            //   child: SingleChildScrollView(
+                            //     child: Column(
+                            //       children: items.asMap().entries.map((entry) {
+
+                            // Items Section (no inner scroll)
+                            Column(
+                              children: items.asMap().entries.map((entry) {
+
                                     int index = entry.key;
                                     var item = entry.value;
 
@@ -341,9 +365,13 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
                                       ],
                                     ),
                                   );
-                                  }).toList(),
-                                ),
-                              ),
+
+                            //       }).toList(),
+                            //     ),
+                            //   ),
+                            // ),
+
+                              }).toList(),
                             ),
 
                             const Divider(height: 15, thickness: 1.5),
@@ -776,7 +804,12 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
       sb.writeln("💰 Your current due is : Rs. ${displayDue.toStringAsFixed(2)}");
       sb.writeln();
       sb.writeln("Pay your due online amount on upi id: ashagrillhouse@upi For any queries contact us.");
+      sb.writeln("");
       sb.writeln("-- Asha Grill House");
+      if(widget.c.phone!="")
+        sb.writeln("https://ashagrillhouse.github.io/site/bill.html?q=${widget.c.phone}");
+      else
+        sb.writeln("https://ashagrillhouse.github.io/site/bill.html");
 
       String shareMessageText = sb.toString();
       List<XFile> xFilesToShare = [];
