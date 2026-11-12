@@ -233,7 +233,7 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 24.0, top: 8.0),
             child: Text(
-              "App Version 3.2.0",
+              "App Version 3.3.0",
               style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),

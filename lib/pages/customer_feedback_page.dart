@@ -64,6 +64,114 @@ class FeedbackData {
   });
 }
 
+// class FeedbackService {
+//   static const Duration _timeout = Duration(seconds: 60);
+//
+//   // Same method as BackupService: auto-redirects are turned off and the 302/303 that
+//   // Google Apps Script answers with is followed by hand (otherwise the payload is lost).
+//   static Future<http.Response> _postToGoogle(String scriptUrl, Map<String, dynamic> body) async {
+//     final client = http.Client();
+//     try {
+//       final request = http.Request('POST', Uri.parse(scriptUrl))
+//         ..headers["Content-Type"] = "application/json"
+//         ..body = jsonEncode(body)
+//         ..followRedirects = false;
+//
+//       final streamedResponse = await client.send(request).timeout(_timeout);
+//       final response = await http.Response.fromStream(streamedResponse);
+//
+//       if (response.statusCode == 302 || response.statusCode == 303) {
+//         final String? redirectUrl = response.headers['location'];
+//         if (redirectUrl != null) {
+//           return await http.get(Uri.parse(redirectUrl)).timeout(_timeout);
+//         }
+//       }
+//       return response;
+//     } finally {
+//       client.close();
+//     }
+//   }
+//
+//   /// Downloads the complete feedback list. Throws an Exception with a readable message on any problem.
+//   static Future<FeedbackData> fetchAll() async {
+//     final config = await DBHelper.getConfig();
+//     final String scriptUrl = config?['googleScriptUrl']?.toString().trim() ?? "";
+//
+//     if (scriptUrl.isEmpty || !scriptUrl.startsWith("https://script.google.com/macros/s/")) {
+//       throw Exception("Google Script URL is not set. Please set it in Configuration.");
+//     }
+//
+//     http.Response response;
+//     try {
+//       response = await _postToGoogle(scriptUrl, {
+//         "apiKey": BackupService.SECRET_API_KEY,
+//         "action": "fetch_feedbacks",
+//       });
+//     } on SocketException {
+//       throw Exception("No internet connection.");
+//     } on TimeoutException {
+//       throw Exception("The server took too long to answer. Please try again.");
+//     } on http.ClientException {
+//       throw Exception("Network problem. Please check your internet and try again.");
+//     }
+//
+//     if (response.statusCode != 200) {
+//       throw Exception("Server error (${response.statusCode}).");
+//     }
+//
+//     dynamic decoded;
+//     try {
+//       decoded = jsonDecode(response.body);
+//     } catch (_) {
+//       decoded = null;
+//     }
+//     if (decoded is! Map) {
+//       throw Exception("Unexpected answer from the server. Make sure the latest Google Script version is deployed.");
+//     }
+//     final Map<String, dynamic> json = Map<String, dynamic>.from(decoded);
+//
+//     if (json['status'] != 'success') {
+//       final String msg = (json['message'] ?? 'Request failed').toString();
+//       if (msg.toLowerCase().contains('unknown action')) {
+//         throw Exception("The Google Script is not updated yet. Deploy the new version (Deploy > Manage deployments > New version).");
+//       }
+//       throw Exception(msg);
+//     }
+//
+//     // star -> count
+//     final Map<int, int> distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+//     final dynamic rawDist = json['distribution'];
+//     if (rawDist is Map) {
+//       for (int s = 1; s <= 5; s++) {
+//         final dynamic v = rawDist['$s'];
+//         distribution[s] = v is num ? v.toInt() : (int.tryParse(v?.toString() ?? '') ?? 0);
+//       }
+//     }
+//
+//     final List<FeedbackEntry> items = [];
+//     final dynamic rawList = json['feedbacks'];
+//     if (rawList is List) {
+//       for (final dynamic e in rawList) {
+//         if (e is Map) {
+//           items.add(FeedbackEntry.fromJson(Map<String, dynamic>.from(e)));
+//         }
+//       }
+//     }
+//
+//     final dynamic avgRaw = json['average'];
+//     final double average = avgRaw is num ? avgRaw.toDouble() : (double.tryParse(avgRaw?.toString() ?? '') ?? 0.0);
+//     final dynamic countRaw = json['count'];
+//     final int count = countRaw is num ? countRaw.toInt() : items.length;
+//
+//     return FeedbackData(
+//       count: count,
+//       average: average,
+//       distribution: distribution,
+//       items: items,
+//     );
+//   }
+// }
+
 class FeedbackService {
   static const Duration _timeout = Duration(seconds: 60);
 
@@ -73,9 +181,9 @@ class FeedbackService {
     final client = http.Client();
     try {
       final request = http.Request('POST', Uri.parse(scriptUrl))
-        ..headers["Content-Type"] = "application/json"
-        ..body = jsonEncode(body)
-        ..followRedirects = false;
+      ..headers["Content-Type"] = "application/json"
+      ..body = jsonEncode(body)
+      ..followRedirects = false;
 
       final streamedResponse = await client.send(request).timeout(_timeout);
       final response = await http.Response.fromStream(streamedResponse);
@@ -94,17 +202,23 @@ class FeedbackService {
 
   /// Downloads the complete feedback list. Throws an Exception with a readable message on any problem.
   static Future<FeedbackData> fetchAll() async {
-    final config = await DBHelper.getConfig();
-    final String scriptUrl = config?['googleScriptUrl']?.toString().trim() ?? "";
+    // 🟢 FIX: Retrieve both scriptUrl AND secretKey from local SQLite configuration
+    final syncConfig = await DBHelper.getSyncConfig();
+    final String scriptUrl = syncConfig['scriptUrl'] ?? "";
+    final String secretKey = syncConfig['secretKey'] ?? "";
 
     if (scriptUrl.isEmpty || !scriptUrl.startsWith("https://script.google.com/macros/s/")) {
       throw Exception("Google Script URL is not set. Please set it in Configuration.");
     }
 
+    if (secretKey.isEmpty) {
+      throw Exception("Secret Key is not set. Please set it in Configuration.");
+    }
+
     http.Response response;
     try {
       response = await _postToGoogle(scriptUrl, {
-        "apiKey": BackupService.SECRET_API_KEY,
+        "apiKey": secretKey, // 🟢 FIX: Send the dynamic secret key from DB instead of a hardcoded value
         "action": "fetch_feedbacks",
       });
     } on SocketException {

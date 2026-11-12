@@ -18,7 +18,8 @@ class DBHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      //version: 3,
+      version: 4,   // was 3
       onCreate: (db, version) async {
 
         await db.execute('''
@@ -75,12 +76,22 @@ class DBHelper {
         )
         ''');
 
+        // await db.execute('''
+        // CREATE TABLE config (
+        //   id INTEGER PRIMARY KEY CHECK (id = 1),
+        //   googleScriptUrl TEXT,
+        //   appPassword TEXT,
+        //   status TEXT
+        // )
+        // ''');
+
         await db.execute('''
         CREATE TABLE config (
           id INTEGER PRIMARY KEY CHECK (id = 1),
           googleScriptUrl TEXT,
           appPassword TEXT,
-          status TEXT
+          status TEXT,
+          secretKey TEXT
         )
         ''');
 
@@ -168,6 +179,9 @@ class DBHelper {
             status TEXT
           )
           ''');
+        }
+        if (oldVersion < 4) {
+          await db.execute("ALTER TABLE config ADD COLUMN secretKey TEXT DEFAULT ''");
         }
       },
     );
@@ -391,11 +405,30 @@ class DBHelper {
     return await dbClient.insert("config", data, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  // static Future<Map<String, dynamic>?> getConfig() async {
+  //   final dbClient = await db;
+  //   final List<Map<String, dynamic>> res = await dbClient.query("config", columns: ['googleScriptUrl'], where: "id = 1");
+  //   return res.isNotEmpty ? res.first : null;
+  // }
+
   static Future<Map<String, dynamic>?> getConfig() async {
     final dbClient = await db;
-    final List<Map<String, dynamic>> res = await dbClient.query("config", columns: ['googleScriptUrl'], where: "id = 1");
+    final res = await dbClient.query("config", where: "id = 1");
     return res.isNotEmpty ? res.first : null;
   }
+
+  static Future<Map<String, String>> getSyncConfig() async {
+    final row = await getConfig() ?? <String, dynamic>{};
+    String s(String k) => row[k]?.toString().trim() ?? "";
+    return {
+      "scriptUrl": s("googleScriptUrl"),
+      "secretKey": s("secretKey"),
+    };
+  }
+
+  static Map<String, dynamic> buildSyncAuth(Map<String, String> cfg) => {
+    "apiKey": cfg["secretKey"],
+  };
 
   static Future<String?> getAppPassword() async {
     final dbClient = await db;

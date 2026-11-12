@@ -13,6 +13,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:permission_handler/permission_handler.dart';
 import '../db_helper.dart';
+import '../backup_service.dart';
 
 // ==========================================
 // 🔐 HTTP CLIENT WRAPPER (Required for Drive API)
@@ -401,7 +402,6 @@ class ImportPage extends StatefulWidget {
 }
 
 class _ImportPageState extends State<ImportPage> {
-  static const String _apiKey = "1aqcMM6U1aqcMM6UhruDI5f5GUJui5kmKuKtKa0XWmKuKtKa0XW";
 
   // Tables that are restored (same list and same order as before)
   static const List<String> _tables = [
@@ -637,13 +637,13 @@ class _ImportPageState extends State<ImportPage> {
   // ==========================================
   // ☁️ IMPORT FROM GOOGLE SHEETS & DRIVE
   // ==========================================
-  Future<http.Response> _fetchDatabaseFromScript(String scriptUrl) async {
+  Future<http.Response> _fetchDatabaseFromScript(Map<String, String> cfg) async {
     final client = http.Client();
     try {
-      final request = http.Request('POST', Uri.parse(scriptUrl))
+      final request = http.Request('POST', Uri.parse(cfg['scriptUrl']!))
       ..headers["Content-Type"] = "application/json"
       ..body = jsonEncode({
-        "apiKey": _apiKey,
+        ...DBHelper.buildSyncAuth(cfg),
         "action": "fetch_full_database",
       })
       ..followRedirects = false;
@@ -679,14 +679,17 @@ class _ImportPageState extends State<ImportPage> {
     });
 
     try {
-      final config = await DBHelper.getConfig();
-      final String scriptUrl = config?['googleScriptUrl']?.toString().trim() ?? "";
-      if (scriptUrl.isEmpty) throw Exception("Google Script URL is missing in Settings.");
-
-      final http.Response scriptResponse = await _fetchDatabaseFromScript(scriptUrl);
-      if (scriptResponse.statusCode != 200) {
-        throw Exception("Failed to fetch database (server code ${scriptResponse.statusCode}).");
+      final cfg = await DBHelper.getSyncConfig();
+      if (cfg['scriptUrl']!.isEmpty) {
+        throw Exception("[IMP-101] Google Script URL is missing. Open System Settings and enter it.");
       }
+      if (cfg['secretKey']!.isEmpty) {
+        throw Exception("[IMP-111] Secret Key is not set. Open System Settings and enter it.");
+      }
+
+      final http.Response scriptResponse = await _fetchDatabaseFromScript(cfg);
+      final String? problem = BackupService.explainServerReply(scriptResponse);
+      if (problem != null) throw Exception(problem);
 
       _setStatus("Step 2/4: Parsing Data...");
       dynamic decoded;

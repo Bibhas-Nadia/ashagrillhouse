@@ -681,6 +681,24 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
   // Add this controller at the top of your state class variables
   final ScreenshotController _screenshotController = ScreenshotController();
 
+  // Logo is loaded and decoded ONCE before any receipt capture
+  MemoryImage? _logoProvider;
+
+  Future<void> _ensureLogoLoaded() async {
+    try {
+      if (_logoProvider == null) {
+        final ByteData data = await rootBundle.load('assets/images/app_icon.png');
+        _logoProvider = MemoryImage(data.buffer.asUint8List());
+      }
+      // Decode into Flutter's image cache so it renders instantly
+      if (mounted) {
+        await precacheImage(_logoProvider!, context);
+      }
+    } catch (e) {
+      debugPrint("Logo preload failed: $e");
+    }
+  }
+
   // ==========================================================
   // 📤 SHARE CUSTOMER PROFILE DETAILS & TRANSACTIONS WITH IMAGES
   // ==========================================================
@@ -776,79 +794,160 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
 
   // --- CORE SHARE EXECUTION ---
   Future<void> _executeShare(List<String> selectedItems) async {
+    final List<XFile> xFilesToShare = [];
+    String shareMessageText = '';
+
+    bool loadingDialogShown = false;
+    Object? preparationError;
+
     try {
-      // Show loading indicator while generating temporary receipt images
-      showDialog(
+      // Show loading indicator
+      showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator(color: Colors.teal)),
+        builder: (dialogContext) => const Center(
+          child: CircularProgressIndicator(color: Colors.teal),
+        ),
       );
 
+      loadingDialogShown = true;
+
+      // Get payment history
       final transactions = await DBHelper.getTransactions(widget.c.id!);
-      StringBuffer sb = StringBuffer();
-      sb.writeln("Dear ${widget.c.name}");
+
+      // Calculate bill amounts
+      final double actualDue =
+      double.tryParse(widget.c.due.toString()) ?? 0.0;
+
+      final double displayDue = actualDue < 0 ? 0.0 : actualDue;
+      final double totalPaid = _totalPaid;
+      final double totalBill = displayDue + totalPaid;
+
+      // Create share message
+      final StringBuffer sb = StringBuffer();
+      sb.writeln();
+      sb.writeln("Hi ${widget.c.name}");
       sb.writeln();
 
-      if (transactions.isNotEmpty && _totalPaid > 0) {
-        sb.writeln("✅ You already paid Rs. ${_totalPaid.toStringAsFixed(2)} on");
-        for (var t in transactions) {
-          String date = t['date'] ?? '';
-          String amount = t['amount']?.toString() ?? '0';
-          sb.writeln("date: $date : Rs. $amount");
+      sb.writeln(
+        "🧾 *Total Bill Amount:* Rs. ${totalBill.toStringAsFixed(2)}",
+      );
+
+      sb.writeln(
+        "💰 *Current Due:* Rs. ${displayDue.toStringAsFixed(2)}",
+      );
+
+      // Payment history
+      if (transactions.isNotEmpty && totalPaid > 0) {
+        sb.writeln(
+          "✅ *Payment Received* (Total  Rs. "
+          "${totalPaid.toStringAsFixed(2)})",
+        );
+
+        for (final t in transactions) {
+          final String date = t['date']?.toString() ?? '';
+
+          final double amount =
+          double.tryParse(t['amount']?.toString() ?? '') ?? 0.0;
+
+          sb.writeln(
+            "- Rs. ${amount.toStringAsFixed(2)} on $date",
+          );
         }
+
         sb.writeln();
       }
 
-      double actualDue = double.tryParse(widget.c.due) ?? 0;
-      double displayDue = actualDue < 0 ? 0.0 : actualDue;
-      sb.writeln("💰 Your current due is : Rs. ${displayDue.toStringAsFixed(2)}");
+      sb.writeln("💳 *Pay your due via UPI*: ashagrillhouse@upi");
       sb.writeln();
-      sb.writeln("Pay your due online amount on upi id: ashagrillhouse@upi For any queries contact us.");
-      sb.writeln("");
-      sb.writeln("-- Asha Grill House");
-      if(widget.c.phone!="")
-        sb.writeln("https://ashagrillhouse.github.io/site/bill.html?q=${widget.c.phone}");
-      else
-        sb.writeln("https://ashagrillhouse.github.io/site/bill.html");
+      sb.writeln("🔗 *View detailed bill here:* 👇");
 
-      String shareMessageText = sb.toString();
-      List<XFile> xFilesToShare = [];
+      final String phone = widget.c.phone.trim();
+
+      if (phone.isNotEmpty) {
+        final String encodedPhone = Uri.encodeQueryComponent(phone);
+
+        sb.writeln(
+          "https://ashagrillhouse.github.io/site/bill.html?q=$encodedPhone",
+        );
+      } else {
+        sb.writeln(
+          "https://ashagrillhouse.github.io/site/bill.html",
+        );
+      }
+      sb.writeln();
+      sb.writeln("Thank you. Contact us for any queries");
+      sb.writeln();
+      sb.writeln("Asha Grill House");
+
+      shareMessageText = sb.toString();
 
       // Process selected items
-      for (String item in selectedItems) {
-        if (item.trim().isEmpty) continue;
+      for (final item in selectedItems) {
+        final String path = item.trim();
 
-        if (_isReceipt(item)) {
-          // 🛠️ Convert Data to Temporary Image
-          XFile? receiptImg = await _generateReceiptImage(item);
+        if (path.isEmpty) continue;
+
+        if (_isReceipt(path)) {
+          // Generate temporary receipt image
+          final XFile? receiptImg = await _generateReceiptImage(path);
+
           if (receiptImg != null) {
             xFilesToShare.add(receiptImg);
           }
         } else {
-          // 📸 Existing Physical File
-          File physicalFile = File(item.trim());
+          // Check existing physical file
+          final File physicalFile = File(path);
+
           if (await physicalFile.exists()) {
-            xFilesToShare.add(XFile(item.trim()));
+            xFilesToShare.add(XFile(path));
           }
         }
       }
+    } catch (e) {
+      preparationError = e;
+    } finally {
+      // Close only the loading dialog opened by this method
+      if (loadingDialogShown && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
 
-      // Close loading dialog
-      if (mounted) Navigator.pop(context);
+    if (!mounted) return;
 
-      // Trigger Share
+    // Report any error while preparing the share
+    if (preparationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Error generating share card: $preparationError",
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+
+      return;
+    }
+
+    // Trigger sharing separately from loading-dialog handling
+    try {
       if (xFilesToShare.isNotEmpty) {
-        await Share.shareXFiles(xFilesToShare, text: shareMessageText);
+        await Share.shareXFiles(
+          xFilesToShare,
+          text: shareMessageText,
+        );
       } else {
         await Share.share(shareMessageText);
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // close loading
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error generating share card: $e"), backgroundColor: Colors.redAccent),
-        );
-      }
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error sharing: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
@@ -863,6 +962,8 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
 
     final billData = await _fetchFullReceiptDetails(billId);
     if (billData == null) return null;
+
+    await _ensureLogoLoaded();   // 👈 NEW
 
     List<dynamic> items = billData['items'] ?? [];
     //String rawDate = billData['date'] ?? fallbackDate;
@@ -888,15 +989,29 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
                   Row(
                     children: [
                       // Safe circular local image logo
-                      Container(
+                      // Container(
+                      //   width: 32,
+                      //   height: 32,
+                      //   decoration: const BoxDecoration(
+                      //     shape: BoxShape.circle,
+                      //     image: DecorationImage(
+                      //       image: AssetImage('assets/images/app_icon.png'), // Replace with your local image asset path
+                      //       fit: BoxFit.cover,
+                      //     ),
+                      //   ),
+                      // ),
+                      // Logo from preloaded memory image (always ready at capture time)
+                      SizedBox(
                         width: 32,
                         height: 32,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          image: DecorationImage(
-                            image: AssetImage('assets/images/app_icon.png'), // Replace with your local image asset path
+                        child: ClipOval(
+                          child: _logoProvider != null
+                          ? Image(
+                            image: _logoProvider!,
                             fit: BoxFit.cover,
-                          ),
+                            gaplessPlayback: true,
+                          )
+                          : const Icon(Icons.restaurant, color: Colors.teal, size: 24),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1024,11 +1139,14 @@ class _CustomerDetailPageState extends State<CustomerDetailPage> {
     try {
       final Uint8List imageBytes = await _screenshotController.captureFromWidget(
         receiptWidget,
-        delay: const Duration(milliseconds: 100),
+        delay: const Duration(milliseconds: 400), // gives time for first paint
+        pixelRatio: 3.0,                          // sharper image on WhatsApp
+        context: context,
       );
 
       final directory = await getTemporaryDirectory();
-      final imagePath = await File('${directory.path}/receipt_share_$billId.png').create();
+      //final imagePath = await File('${directory.path}/receipt_share_$billId.png').create();
+      final imagePath = await File('${directory.path}/receipt_share_${billId}_${DateTime.now().millisecondsSinceEpoch}.png').create();
       await imagePath.writeAsBytes(imageBytes);
       return XFile(imagePath.path);
     } catch (e) {
